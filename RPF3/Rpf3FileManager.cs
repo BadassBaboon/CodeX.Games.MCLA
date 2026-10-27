@@ -153,26 +153,33 @@ namespace CodeX.Games.MCLA.RPF3
 
         public override void InitArchivesComplete()
         {
-            foreach (var archive in AllArchives)
+            try
             {
-                if (archive.AllEntries != null)
+                foreach (var archive in AllArchives)
                 {
-                    ArchiveDict[archive.Path] = archive;
-                    foreach (var entry in archive.AllEntries)
+                    if (archive.AllEntries != null)
                     {
-                        if (entry is Rpf3FileEntry fe)
+                        ArchiveDict[archive.Path] = archive;
+                        foreach (var entry in archive.AllEntries)
                         {
-                            EntryDict[fe.Path] = fe;
-                            JenkIndex.Ensure(fe.ShortNameLower, "MCLA");
+                            if (entry is Rpf3FileEntry fe)
+                            {
+                                EntryDict[fe.Path] = fe;
+                                JenkIndex.Ensure(fe.ShortNameLower, "MCLA");
+                            }
                         }
                     }
                 }
-            }
 
-            InitGameFiles();
-            if (StartupCacheDirty)
+                InitGameFiles();
+                if (StartupCacheDirty)
+                {
+                    SaveStartupCache();
+                }
+            }
+            catch (Exception ex)
             {
-                SaveStartupCache();
+                Core.Engine.Console.Write("MCLA", "InitArchivesComplete error: " + ex);
             }
         }
 
@@ -624,10 +631,11 @@ namespace CodeX.Games.MCLA.RPF3
         {
             var fm = Game.GetFileManager() as Rpf3FileManager;
             var dfm = fm?.DataFileMgr;
-            var cityDict = fm.Store.TexturesCityDict;
-            var files = dfm.StreamEntries[Rpf3ResourceType.Generic];
+            var cityDict = fm?.Store?.TexturesCityDict;
+            if (dfm?.StreamEntries == null || !dfm.StreamEntries.TryGetValue(Rpf3ResourceType.Generic, out var files)) return;
             var cache = new Dictionary<string, Texture>(StringComparer.OrdinalIgnoreCase);
 
+            if (drawable?.ShaderGroup == null || drawable.ShaderGroup.Shaders.Items == null) return;
             foreach (var shader in drawable.ShaderGroup.Shaders.Items)
             {
                 if (shader?.Params == null) continue;
@@ -646,7 +654,8 @@ namespace CodeX.Games.MCLA.RPF3
 
         private static void SetGeoShaderTextures(IRsc5DrawableRoot drawable)
         {
-            foreach (var model in drawable?.Lod?.ModelsData.Items)
+            if (drawable?.Lod == null || drawable.Lod.ModelsData.Items == null) return;
+            foreach (var model in drawable.Lod.ModelsData.Items)
             {
                 if (model?.Geometries.Items == null) continue;
                 var geoms = model.Geometries.Items;
@@ -818,7 +827,8 @@ namespace CodeX.Games.MCLA.RPF3
         public void IndexCityFiles()
         {
             XcsFiles ??= [];
-            foreach (var se in StreamEntries[Rpf3ResourceType.Generic])
+            if (!StreamEntries.TryGetValue(Rpf3ResourceType.Generic, out var genericEntries)) return;
+            foreach (var se in genericEntries)
             {
                 var fe = se.Value;
                 if (fe.Parent == null || new JenkHash(fe.Parent.Name) != 0x45A0781) continue; //sc
@@ -831,7 +841,7 @@ namespace CodeX.Games.MCLA.RPF3
 
         public XctFile GetSectorBounds()
         {
-            if (StreamEntries[Rpf3ResourceType.Generic].TryGetValue(0x3CDD416, out var entry)) //city.xct
+            if (StreamEntries.TryGetValue(Rpf3ResourceType.Generic, out var generic) && generic.TryGetValue(0x3CDD416, out var entry)) //city.xct
             {
                 var data = this.FileManager.EnsureFileData(entry, null);
                 var xct = new XctFile(entry);
@@ -843,7 +853,7 @@ namespace CodeX.Games.MCLA.RPF3
 
         public XmdFile LoadMapLod()
         {
-            if (StreamEntries[Rpf3ResourceType.Generic].TryGetValue(0xA6E77868, out var entry)) //lod.xmd
+            if (StreamEntries.TryGetValue(Rpf3ResourceType.Generic, out var generic) && generic.TryGetValue(0xA6E77868, out var entry)) //lod.xmd
             {
                 var data = this.FileManager.EnsureFileData(entry, null);
                 var xmd = this.FileManager.LoadPiecePack(entry, data, true) as XmdFile;
@@ -896,22 +906,35 @@ namespace CodeX.Games.MCLA.RPF3
         {
             Core.Engine.Console.Write("Rpf3FileManager", "Building MCLA startup cache");
 
-            var bmp = FileMan.DataFileMgr.StreamEntries[Rpf3ResourceType.Generic];
+            if (FileMan?.DataFileMgr?.StreamEntries == null ||
+                !FileMan.DataFileMgr.StreamEntries.TryGetValue(Rpf3ResourceType.Generic, out var bmp))
+            {
+                SerializeItems(bw, []);
+                return;
+            }
+
             var textureItemsSet = new HashSet<Rpf3TextureStoreItem>();
 
             var lodTxds = bmp.Where(e => e.Key == 0x5674B600 || e.Key == 0x5DDDB21D).Select(e => e.Value).ToList(); //lod_0.xtd & common.xtd
             foreach (var txd in lodTxds)
             {
-                var lodTxp = FileMan.LoadTexturePack(txd);
-                foreach (var tex in lodTxp.Textures)
+                try
                 {
-                    var item = new Rpf3TextureStoreItem()
+                    var lodTxp = FileMan.LoadTexturePack(txd);
+                    if (lodTxp?.Textures != null)
                     {
-                        Texture = tex.Key,
-                        FileHash = txd.NameOffset
-                    };
-                    textureItemsSet.Add(item);
+                        foreach (var tex in lodTxp.Textures)
+                        {
+                            var item = new Rpf3TextureStoreItem()
+                            {
+                                Texture = tex.Key,
+                                FileHash = txd.NameOffset
+                            };
+                            textureItemsSet.Add(item);
+                        }
+                    }
                 }
+                catch { }
             }
 
             Parallel.ForEach(bmp, kv =>
@@ -920,31 +943,34 @@ namespace CodeX.Games.MCLA.RPF3
                 if (entry == null) return;
                 if (!entry.NameLower.EndsWith(".xcs")) return;
 
-                var pack = (XcsFile)FileMan.LoadPiecePack(entry);
-                if (pack != null)
+                try
                 {
-                    var localBag = new ConcurrentBag<Rpf3TextureStoreItem>();
-                    foreach (var p in pack.Pieces.Values)
+                    if (FileMan.LoadPiecePack(entry) is XcsFile pack && pack.Pieces != null)
                     {
-                        foreach (var tex in p?.TexturePack?.Textures ?? Enumerable.Empty<KeyValuePair<string, Texture>>())
+                        var localBag = new ConcurrentBag<Rpf3TextureStoreItem>();
+                        foreach (var p in pack.Pieces.Values)
                         {
-                            var item = new Rpf3TextureStoreItem()
+                            foreach (var tex in p?.TexturePack?.Textures ?? Enumerable.Empty<KeyValuePair<string, Texture>>())
                             {
-                                Texture = tex.Key,
-                                FileHash = entry.NameOffset
-                            };
-                            localBag.Add(item);
+                                var item = new Rpf3TextureStoreItem()
+                                {
+                                    Texture = tex.Key,
+                                    FileHash = entry.NameOffset
+                                };
+                                localBag.Add(item);
+                            }
                         }
-                    }
 
-                    lock (textureItemsSet)
-                    {
-                        foreach (var item in localBag)
+                        lock (textureItemsSet)
                         {
-                            textureItemsSet.Add(item);
+                            foreach (var item in localBag)
+                            {
+                                textureItemsSet.Add(item);
+                            }
                         }
                     }
                 }
+                catch { }
             });
             SerializeItems(bw, [.. textureItemsSet]);
         }
