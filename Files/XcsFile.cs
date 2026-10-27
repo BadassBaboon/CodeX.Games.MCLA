@@ -87,9 +87,14 @@ namespace CodeX.Games.MCLA.Files
                     }
                     else
                     {
-                        var payload = new byte[data.Length - 12];
-                        System.Buffer.BlockCopy(data, 12, payload, 0, payload.Length);
-                        data = payload;
+                        int totalSize = VirtualSize + PhysicalSize;
+                        int headerSize = (data.Length >= 16 && (data.Length - 16) == totalSize) ? 16 : 12;
+                        if (data.Length >= headerSize)
+                        {
+                            var payload = new byte[data.Length - headerSize];
+                            System.Buffer.BlockCopy(data, headerSize, payload, 0, payload.Length);
+                            data = payload;
+                        }
                     }
 
                     RawData = (byte[])data.Clone();
@@ -320,18 +325,13 @@ namespace CodeX.Games.MCLA.Files
                 workingData.Add(0xCD);
             }
 
-            // Build standard 12-byte uncompressed RSC5 file
-            byte[] result = new byte[12 + workingData.Count];
-            // Magic: 'RSC5'
-            result[0] = 0x52; result[1] = 0x53; result[2] = 0x43; result[3] = 0x05;
-            // Resource Type: Generic = 1 (Big-Endian)
-            byte[] typeBytes = BitConverter.GetBytes(Rpf3Crypto.Swap((uint)Rpf3ResourceType.Generic));
-            Buffer.BlockCopy(typeBytes, 0, result, 4, 4);
-            // Flag (Big-Endian)
-            byte[] flagBytes = BitConverter.GetBytes(Rpf3Crypto.Swap(flag));
-            Buffer.BlockCopy(flagBytes, 0, result, 8, 4);
-            // Payload
-            workingData.CopyTo(result, 12);
+            // Build standard 16-byte uncompressed RSC5 file (compatible with LARecomp modloader kRsc5HeaderSize)
+            byte[] result = new byte[16 + workingData.Count];
+            BufferUtil.WriteUint(result, 0, Rpf3Crypto.Swap(0x05435352u));
+            BufferUtil.WriteUint(result, 4, Rpf3Crypto.Swap((uint)Rpf3ResourceType.Generic));
+            BufferUtil.WriteUint(result, 8, Rpf3Crypto.Swap(flag));
+            BufferUtil.WriteUint(result, 12, 0); // 4-byte padding for 16-byte header
+            workingData.CopyTo(result, 16);
 
             return result;
         }
