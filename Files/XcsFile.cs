@@ -12,7 +12,7 @@ namespace CodeX.Games.MCLA.Files
     {
         public XcsFile Xcs { get; }
 
-        public XcsTexturePack(XcsFile xcs) : base(xcs?.FileInfo)
+        public XcsTexturePack(XcsFile xcs, GameArchiveFileInfo file = null) : base(file ?? xcs?.FileInfo)
         {
             Xcs = xcs;
         }
@@ -29,13 +29,13 @@ namespace CodeX.Games.MCLA.Files
         }
     }
 
-    public class XcsFile(Rpf3FileEntry file) : PiecePack(file)
+    public class XcsFile : PiecePack
     {
-        public Rpf3FileEntry Entry = file;
+        public GameArchiveFileInfo Entry { get; set; }
         public Rsc5CitySector CitySector { get; private set; }
         public Rsc5TextureDictionary CityTextures { get; private set; }
-        public JenkHash Hash { get; } = JenkHash.GenHash(file?.NameLower ?? "");
-        public string Name { get; } = file?.NameLower;
+        public JenkHash Hash { get; }
+        public string Name { get; }
         public bool DependenciesLoaded { get; set; }
 
         public byte[] RawData { get; private set; }
@@ -43,21 +43,74 @@ namespace CodeX.Games.MCLA.Files
         public int PhysicalSize { get; private set; }
         public XcsTexturePack TexturePack { get; private set; }
 
+        public XcsFile() : base(null)
+        {
+            Entry = null;
+            Hash = JenkHash.GenHash("");
+            Name = "";
+        }
+
+        public XcsFile(GameArchiveFileInfo file) : base(file)
+        {
+            Entry = file;
+            Hash = JenkHash.GenHash(file?.NameLower ?? "");
+            Name = file?.NameLower;
+        }
+
         public override void Load(byte[] data)
         {
             if (data == null || data.Length == 0) return;
 
             var e = FileInfo as Rpf3ResourceFileEntry;
-            if (data.Length >= 12 && BitConverter.ToUInt32(data, 0) == 0x05435352)
+            if (data.Length >= 12)
             {
-                // Uncompressed RSC5 header at the start of loose / saved data
-                uint flag = Rpf3Crypto.Swap(BitConverter.ToUInt32(data, 8));
-                VirtualSize = (int)(flag & 0x7FF) << ((int)((flag >> 11) & 15) + 8);
-                PhysicalSize = (int)((flag >> 15) & 0x7FF) << ((int)((flag >> 26) & 15) + 8);
-                var payload = new byte[data.Length - 12];
-                Buffer.BlockCopy(data, 12, payload, 0, payload.Length);
-                RawData = payload;
-                data = payload;
+                uint magic = BufferUtil.ReadUint(data, 0);
+                if (magic == 0x05435352u || magic == 0x52534305u)
+                {
+                    bool isBigEndian = (magic == 0x52534305u);
+                    uint type = isBigEndian ? Rpf3Crypto.Swap(BufferUtil.ReadUint(data, 4)) : BufferUtil.ReadUint(data, 4);
+                    uint flag = isBigEndian ? Rpf3Crypto.Swap(BufferUtil.ReadUint(data, 8)) : BufferUtil.ReadUint(data, 8);
+
+                    VirtualSize = (int)(flag & 0x7FF) << ((int)((flag >> 11) & 15) + 8);
+                    PhysicalSize = (int)((flag >> 15) & 0x7FF) << ((int)((flag >> 26) & 15) + 8);
+
+                    if ((flag & 0x40000000) != 0)
+                    {
+                        int dLen = VirtualSize + PhysicalSize;
+                        if (data.Length >= 20)
+                        {
+                            int streamLen = (int)Rpf3Crypto.Swap(BufferUtil.ReadUint(data, 16));
+                            var compressed = new byte[streamLen];
+                            System.Buffer.BlockCopy(data, 20, compressed, 0, Math.Min(streamLen, data.Length - 20));
+                            data = Rpf3Crypto.DecompressLZX(compressed, dLen);
+                        }
+                    }
+                    else
+                    {
+                        var payload = new byte[data.Length - 12];
+                        System.Buffer.BlockCopy(data, 12, payload, 0, payload.Length);
+                        data = payload;
+                    }
+
+                    RawData = (byte[])data.Clone();
+
+                    if (e != null)
+                    {
+                        e.Flag = flag;
+                        e.ResourceType = (Rpf3ResourceType)type;
+                        e.IsResource = true;
+                    }
+                }
+                else if (e != null)
+                {
+                    VirtualSize = e.GetVirtualSize();
+                    PhysicalSize = e.GetPhysicalSize();
+                    RawData = (byte[])data.Clone();
+                }
+                else
+                {
+                    RawData = (byte[])data.Clone();
+                }
             }
             else if (e != null)
             {
@@ -70,10 +123,9 @@ namespace CodeX.Games.MCLA.Files
                 RawData = (byte[])data.Clone();
             }
 
-            var r = new Rsc5DataReader(e, data)
+            var r = new Rsc5DataReader(data, VirtualSize, PhysicalSize, DataEndianess.BigEndian)
             {
-                VirtualSize = VirtualSize,
-                PhysicalSize = PhysicalSize,
+                FileEntry = e,
                 Position = Rpf3Crypto.VIRTUAL_BASE
             };
 
@@ -86,7 +138,7 @@ namespace CodeX.Games.MCLA.Files
                 if (piece != null)
                 {
                     Piece = piece;
-                    Pieces.Add(e?.ShortNameLower ?? "piece", piece);
+                    Pieces.Add(Path.GetFileNameWithoutExtension(FileInfo?.PathLower ?? "piece"), piece);
                 }
             }
         }

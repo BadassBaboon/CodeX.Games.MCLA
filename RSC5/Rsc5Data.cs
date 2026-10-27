@@ -42,22 +42,24 @@ namespace CodeX.Games.MCLA.RSC5
 
 
 
-        public Rsc5DataReader(Rpf3ResourceFileEntry entry, byte[] data, DataEndianess endianess = DataEndianess.LittleEndian)
-
+        public Rsc5DataReader(byte[] data, int virtualSize, int physicalSize, DataEndianess endianess = DataEndianess.BigEndian)
         {
-
-            FileEntry = entry;
-
+            FileEntry = null;
             Endianess = endianess;
-
             Data = data;
-
-            VirtualSize = entry.GetVirtualSize();
-
-            PhysicalSize = entry.GetPhysicalSize();
-
+            VirtualSize = virtualSize;
+            PhysicalSize = physicalSize;
             Position = 0x50000000;
+        }
 
+        public Rsc5DataReader(Rpf3ResourceFileEntry entry, byte[] data, DataEndianess endianess = DataEndianess.BigEndian)
+        {
+            FileEntry = entry;
+            Endianess = endianess;
+            Data = data;
+            VirtualSize = entry?.GetVirtualSize() ?? 0;
+            PhysicalSize = entry?.GetPhysicalSize() ?? 0;
+            Position = 0x50000000;
         }
 
 
@@ -1356,17 +1358,18 @@ namespace CodeX.Games.MCLA.RSC5
 
 
 
-            byte[] result = new byte[12 + fullData.Length];
+            byte[] result = new byte[16 + fullData.Length];
 
-            // RSC5 magic 0x05435352 Big Endian
-
-            BufferUtil.WriteUint(result, 0, 0x05435352u);
+            // RSC5 magic 0x05435352 Big Endian (swapped for little-endian host writing)
+            BufferUtil.WriteUint(result, 0, Rpf3Crypto.Swap(0x05435352u));
 
             BufferUtil.WriteUint(result, 4, Rpf3Crypto.Swap(resourceType));
 
             BufferUtil.WriteUint(result, 8, Rpf3Crypto.Swap(flag));
 
-            Buffer.BlockCopy(fullData, 0, result, 12, fullData.Length);
+            BufferUtil.WriteUint(result, 12, 0); // 4-byte padding for 16-byte header (modloader kRsc5HeaderSize)
+
+            Buffer.BlockCopy(fullData, 0, result, 16, fullData.Length);
 
             return result;
 

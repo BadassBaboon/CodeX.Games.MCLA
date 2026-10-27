@@ -75,7 +75,7 @@ namespace CodeX.Games.MCLA.RSC5
         }
     }
 
-    public class Rsc5TextureDictionary : Rsc5BlockBaseMap
+    public class Rsc5TextureDictionary : Rsc5BlockBaseMap, MetaNode
     {
         public override ulong BlockLength => 32;
         public override uint VFT { get; set; } = 0;
@@ -118,6 +118,21 @@ namespace CodeX.Games.MCLA.RSC5
             writer.WriteUInt32(UsageCount > 0 ? UsageCount : 1);
             writer.WriteArr(Hashes);
             writer.WritePtrArr(Textures);
+        }
+
+        public void Read(MetaNodeReader reader)
+        {
+            var textures = reader.ReadNodeArray<Rsc5Texture>("Textures");
+            if (textures != null)
+            {
+                Build(textures);
+            }
+        }
+
+        public void Write(MetaNodeWriter writer)
+        {
+            writer.WriteUInt32("@version", 0);
+            writer.WriteNodeArray("Textures", Textures.Items);
         }
 
         public void Build(IEnumerable<Rsc5Texture> textures)
@@ -260,12 +275,12 @@ namespace CodeX.Games.MCLA.RSC5
 
         public override void Write(Rsc5DataWriter writer)
         {
-            var swizzled = Rpf3Crypto.SwizzleXbox360Data(Data, Width, Height, Format);
+            var swizzled = (Data != null) ? Rpf3Crypto.SwizzleXbox360Data(Data, Width, Height, Format) : [];
             var rsc5Format = ConvertToRsc5Format(Format);
             var texData = new Rsc5TextureData
             {
-                BlockLength = (ulong)swizzled.Length,
-                Data = swizzled
+                BlockLength = (ulong)(swizzled?.Length ?? 0),
+                Data = swizzled ?? []
             };
 
             var d3d = new uint[16];
@@ -370,6 +385,38 @@ namespace CodeX.Games.MCLA.RSC5
             return tex;
         }
 
+        public override void Read(MetaNodeReader reader)
+        {
+            base.Read(reader);
+            var cleanName = Name ?? "";
+            if (cleanName.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+            {
+                cleanName = cleanName[..^4];
+            }
+            cleanName = Path.GetFileName(cleanName);
+            var dds = reader.ReadExternal(cleanName + ".dds");
+            if (dds != null)
+            {
+                var tex = DDSIO.GetTexture(dds);
+                if (tex != null)
+                {
+                    Width = tex.Width;
+                    Height = tex.Height;
+                    Format = tex.Format;
+                    MipLevels = (byte)(tex.MipLevels > 0 ? tex.MipLevels : 1);
+                    Data = tex.Data;
+                    Stride = (ushort)(tex.Stride > 0 ? tex.Stride : tex.Width * (tex.Format == TextureFormat.BC1 ? 2 : 4));
+                    Sampler = tex.Sampler.Value != 0 ? tex.Sampler : TextureSampler.AnisotropicWrap;
+                    IsModified = true;
+                }
+            }
+        }
+
+        public override void Write(MetaNodeWriter writer)
+        {
+            base.Write(writer);
+        }
+
         public override string ToString()
         {
             return "Texture: " + Width.ToString() + "x" + Height.ToString() + ": " + Name;
@@ -436,6 +483,31 @@ namespace CodeX.Games.MCLA.RSC5
             writer.WritePtr(D3DBaseTexture);
             writer.WriteUInt16(Width);
             writer.WriteUInt16(Height);
+        }
+
+        public override void Read(MetaNodeReader reader)
+        {
+            Name = reader.ReadString("@name");
+            if (string.IsNullOrEmpty(Name))
+            {
+                Name = reader.ReadString("Name");
+            }
+        }
+
+        public override void Write(MetaNodeWriter writer)
+        {
+            var cleanName = Name ?? "";
+            if (cleanName.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+            {
+                cleanName = cleanName[..^4];
+            }
+            cleanName = Path.GetFileName(cleanName);
+            writer.WriteString("@name", cleanName);
+            var dds = (Data != null) ? DDSIO.GetDDSFile(this) : null;
+            if (dds != null)
+            {
+                writer.WriteExternal(cleanName + ".dds", dds);
+            }
         }
 
         public override string ToString()
