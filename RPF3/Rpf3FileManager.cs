@@ -69,7 +69,7 @@ namespace CodeX.Games.MCLA.RPF3
             InitFileType(".xct", "City File/ Car Tuning", FileTypeIcon.File);
             InitFileType(".xcc", "Car Config", FileTypeIcon.XmlFile, FileTypeAction.ViewXml);
             InitFileType(".dds", "DirectDraw Surface", FileTypeIcon.Image, FileTypeAction.ViewTextures);
-            InitFileType(".xcs", "City Sector", FileTypeIcon.Piece, FileTypeAction.ViewTextures);
+            InitFileType(".xcs", "City Sector", FileTypeIcon.Piece, FileTypeAction.ViewModels);
             InitFileType(".xapk", "Animation Pack", FileTypeIcon.Animation, FileTypeAction.ViewModels);
             InitFileType(".xov", "Overlay", FileTypeIcon.File);
             InitFileType(".xwt", "Wheel Texture", FileTypeIcon.Image, FileTypeAction.ViewTextures);
@@ -415,20 +415,16 @@ namespace CodeX.Games.MCLA.RPF3
 
         public override string GetXmlFormatName(string filename, out int trimlength)
         {
-            if (filename.EndsWith(".xtd.xml"))
-            {
-                trimlength = 8;
-                return "XTD";
-            }
             trimlength = 4;
-            var str1 = filename.Substring(0, filename.Length - trimlength);
-            var idx = str1.LastIndexOf('.');
-            if (idx < 0)
+            if (filename.EndsWith(".xtd.xml", StringComparison.OrdinalIgnoreCase))
             {
-                return "RSC XML";
+                return "XTD XML";
             }
-            trimlength += str1.Length - idx;
-            return str1[(idx + 1)..].ToUpperInvariant() + " XML";
+            if (filename.EndsWith(".xcs.xml", StringComparison.OrdinalIgnoreCase))
+            {
+                return "XCS XML";
+            }
+            return "RSC XML";
         }
 
         public override string ConvertToText(GameArchiveFileInfo file, byte[] data, out string newfilename)
