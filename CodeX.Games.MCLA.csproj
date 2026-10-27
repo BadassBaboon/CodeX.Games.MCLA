@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0-windows7.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <Platforms>AnyCPU;x86</Platforms>
@@ -13,8 +14,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CodeX.Core\CodeX.Core.csproj" />
-    <ProjectReference Include="..\CodeX.Forms\CodeX.Forms.csproj" />
+    <Reference Include="CodeX.Core">
+      <HintPath>E:\Grand Theft Auto V_Mods\EDITOR\CodeX_029_RDR_LOD\CodeX.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="CodeX.Forms">
+      <HintPath>E:\Grand Theft Auto V_Mods\EDITOR\CodeX_029_RDR_LOD\CodeX.Forms.dll</HintPath>
+    </Reference>
+    <Reference Include="SharpDX">
+      <HintPath>E:\Grand Theft Auto V_Mods\EDITOR\CodeX_029_RDR_LOD\SharpDX.dll</HintPath>
+    </Reference>
+    <Reference Include="SharpDX.Direct3D11">
+      <HintPath>E:\Grand Theft Auto V_Mods\EDITOR\CodeX_029_RDR_LOD\SharpDX.Direct3D11.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

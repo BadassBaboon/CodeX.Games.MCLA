@@ -69,7 +69,7 @@ namespace CodeX.Games.MCLA.RPF3
             InitFileType(".xct", "City File/ Car Tuning", FileTypeIcon.File);
             InitFileType(".xcc", "Car Config", FileTypeIcon.XmlFile, FileTypeAction.ViewXml);
             InitFileType(".dds", "DirectDraw Surface", FileTypeIcon.Image, FileTypeAction.ViewTextures);
-            InitFileType(".xcs", "City Sector", FileTypeIcon.Piece, FileTypeAction.ViewModels);
+            InitFileType(".xcs", "City Sector", FileTypeIcon.Piece, FileTypeAction.ViewTextures);
             InitFileType(".xapk", "Animation Pack", FileTypeIcon.Animation, FileTypeAction.ViewModels);
             InitFileType(".xov", "Overlay", FileTypeIcon.File);
             InitFileType(".xwt", "Wheel Texture", FileTypeIcon.Image, FileTypeAction.ViewTextures);
@@ -441,6 +441,12 @@ namespace CodeX.Games.MCLA.RPF3
                 var xtd = new XtdFile(entry);
                 xtd.Load(data);
                 return xtd;
+            }
+            else if (file.NameLower.EndsWith(".xcs"))
+            {
+                var xcs = new XcsFile(entry);
+                xcs.Load(data);
+                return xcs.GetTexturePack();
             }
             else if (file.NameLower.EndsWith(".xtl") || file.NameLower.EndsWith(".xtp"))
             {
